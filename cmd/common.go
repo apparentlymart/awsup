@@ -26,3 +26,10 @@ func printDiagnostics(diags hcl.Diagnostics) {
 	printer := hcl.NewDiagnosticTextWriter(os.Stderr, parser.Files(), uint(width), isTTY)
 	printer.WriteDiagnostics(diags)
 }
+
+func exitIfErrors(diags hcl.Diagnostics) {
+	if diags.HasErrors() {
+		printDiagnostics(diags)
+		os.Exit(2)
+	}
+}

@@ -2,13 +2,14 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/apparentlymart/awsup/eval"
 	"github.com/hashicorp/hcl2/hcl"
 	"github.com/spf13/cobra"
 	"github.com/zclconf/go-cty/cty"
 )
+
+var generateCmdConstantsFiles []string
 
 // generateCmd represents the generate command
 var generateCmd = &cobra.Command{
@@ -21,14 +22,15 @@ var generateCmd = &cobra.Command{
 			args = []string{"."}
 		}
 
-		// TODO: Populate this from files provided via the CLI
-		inputConstants := make(hcl.Attributes)
+		var diags hcl.Diagnostics
 
-		ctx, diags := eval.NewRootContext(parser, args[0], inputConstants)
-		printDiagnostics(diags)
-		if diags.HasErrors() {
-			os.Exit(2)
-		}
+		inputConstants, constantsDiags := parser.ParseValuesFiles(generateCmdConstantsFiles...)
+		diags = append(diags, constantsDiags...)
+		exitIfErrors(diags)
+
+		ctx, ctxDiags := eval.NewRootContext(parser, args[0], inputConstants)
+		diags = append(diags, ctxDiags...)
+		exitIfErrors(diags)
 
 		// The following is just a placeholder for real context processing,
 		// to demonstrate that the config loading is working.
@@ -37,9 +39,14 @@ var generateCmd = &cobra.Command{
 			fmt.Printf("- %s: %#v\n", mctx.Path, descVal)
 			return true
 		})
+
+		// If we didn't error out above then we might still have some warnings
+		// to print here.
+		printDiagnostics(diags)
 	},
 }
 
 func init() {
+	generateCmd.Flags().StringSliceVarP(&generateCmdConstantsFiles, "constants", "c", nil, "pass constants from values files into the root module")
 	rootCmd.AddCommand(generateCmd)
 }
