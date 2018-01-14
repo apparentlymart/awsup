@@ -91,7 +91,7 @@ func (mctx *ModuleContext) EvalConstant(expr hcl.Expression, ty cty.Type, each E
 		diags = append(diags, &hcl.Diagnostic{
 			Severity: hcl.DiagError,
 			Summary:  "Incorrect value type",
-			Detail:   fmt.Sprintf("This expression is not of the expected type: %s", err),
+			Detail:   fmt.Sprintf("This expression is not acceptable: %s.", err),
 			Subject:  expr.Range().Ptr(),
 		})
 		val = cty.NullVal(ty) // Ensure we still return something semi-valid
