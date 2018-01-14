@@ -22,6 +22,17 @@ func newModuleContext(parser *config.Parser, srcPath string, path addr.ModulePat
 		// though giving the caller the option to poke around in the
 		// returned Config object if desired, since it may include some
 		// partial information for valid portions of the configuration.
+
+		// We'll use our call range as a synthetic Subject for any diagnostics
+		// that don't already have one, since at least that helps the user
+		// figure out which Module block led to the diagnostic.
+
+		for _, diag := range diags {
+			if (diag.Subject == nil && callRange != hcl.Range{}) {
+				diag.Subject = &callRange
+			}
+		}
+
 		return mctx, diags
 	}
 
