@@ -43,6 +43,13 @@ func newModuleContext(parser *config.Parser, srcPath string, path addr.ModulePat
 	// this point forward.
 
 	children := make(map[string]*ModuleEach)
+	if constsDiags.HasErrors() {
+		// We won't proceed further if we encountered errors building the
+		// constants table, since our various calls to EvalConstants below
+		// tend to cause confusing follow-up diagnostics as a result of
+		// required constants being absent from the table.
+		return mctx, diags
+	}
 	for name, mcfg := range cfg.Modules {
 		forEachVal, valDiags := mctx.EvalConstant(mcfg.ForEach, cty.DynamicPseudoType, NoEachState)
 		diags = append(diags, valDiags...)
