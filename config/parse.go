@@ -9,12 +9,26 @@ import (
 
 	"github.com/hashicorp/hcl2/gohcl"
 	"github.com/hashicorp/hcl2/hcl"
-	"github.com/hashicorp/hcl2/hcl/hclsyntax"
+	"github.com/hashicorp/hcl2/hclparse"
 	"github.com/zclconf/go-cty/cty"
 )
 
-func ParseFileSource(src []byte, filename string) (*File, hcl.Diagnostics) {
-	astFile, diags := hclsyntax.ParseConfig(src, filename, hcl.Pos{Line: 1, Column: 1})
+type Parser struct {
+	HCLParser *hclparse.Parser
+}
+
+func NewParser() *Parser {
+	return &Parser{
+		HCLParser: hclparse.NewParser(),
+	}
+}
+
+func (p *Parser) Files() map[string]*hcl.File {
+	return p.HCLParser.Files()
+}
+
+func (p *Parser) ParseFileSource(src []byte, filename string) (*File, hcl.Diagnostics) {
+	astFile, diags := p.HCLParser.ParseHCL(src, filename)
 
 	file := &File{
 		Source:     src,
@@ -109,7 +123,7 @@ func ParseFileSource(src []byte, filename string) (*File, hcl.Diagnostics) {
 	return file, diags
 }
 
-func ParseFile(filename string) (*File, hcl.Diagnostics) {
+func (p *Parser) ParseFile(filename string) (*File, hcl.Diagnostics) {
 	src, err := ioutil.ReadFile(filename)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -130,7 +144,7 @@ func ParseFile(filename string) (*File, hcl.Diagnostics) {
 			}
 		}
 	}
-	return ParseFileSource(src, filename)
+	return p.ParseFileSource(src, filename)
 }
 
 func NewModule(sourcePath, sourceDir string, files ...*File) (*Module, hcl.Diagnostics) {
@@ -368,7 +382,7 @@ func NewModule(sourcePath, sourceDir string, files ...*File) (*Module, hcl.Diagn
 	return module, diags
 }
 
-func ParseDir(path string) (*Module, hcl.Diagnostics) {
+func (p *Parser) ParseDir(path string) (*Module, hcl.Diagnostics) {
 	infos, err := ioutil.ReadDir(path)
 	if err != nil {
 		// We'll return an empty module just so the caller gets something
@@ -412,7 +426,7 @@ func ParseDir(path string) (*Module, hcl.Diagnostics) {
 		}
 
 		filePath := filepath.Join(path, name)
-		file, fileDiags := ParseFile(filePath)
+		file, fileDiags := p.ParseFile(filePath)
 		diags = append(diags, fileDiags...)
 		files = append(files, file)
 	}
@@ -422,16 +436,16 @@ func ParseDir(path string) (*Module, hcl.Diagnostics) {
 	return module, diags
 }
 
-func ParseDirOrFile(path string) (*Module, hcl.Diagnostics) {
+func (p *Parser) ParseDirOrFile(path string) (*Module, hcl.Diagnostics) {
 	info, err := os.Stat(path)
 	if err == nil && !info.IsDir() {
-		file, diags := ParseFile(path)
+		file, diags := p.ParseFile(path)
 		module, modDiags := NewModule(file.SourcePath, filepath.Dir(file.SourcePath), file)
 		diags = append(diags, modDiags...)
 		return module, diags
 	}
 
-	return ParseDir(path)
+	return p.ParseDir(path)
 }
 
 func decodeConstant(block *hcl.Block) (*Constant, hcl.Diagnostics) {

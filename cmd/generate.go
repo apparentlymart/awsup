@@ -24,8 +24,8 @@ var generateCmd = &cobra.Command{
 		// TODO: Populate this from files provided via the CLI
 		inputConstants := make(hcl.Attributes)
 
-		ctx, diags := eval.NewRootContext(args[0], inputConstants)
-		printDiagnostics(diags, make(map[string]*hcl.File))
+		ctx, diags := eval.NewRootContext(parser, args[0], inputConstants)
+		printDiagnostics(diags)
 		if diags.HasErrors() {
 			os.Exit(2)
 		}

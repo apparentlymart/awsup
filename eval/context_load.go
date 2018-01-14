@@ -11,8 +11,8 @@ import (
 	"github.com/zclconf/go-cty/cty"
 )
 
-func newModuleContext(srcPath string, path addr.ModulePath, each EachState, inputConstants hcl.Attributes, root, parent *ModuleContext, callRange hcl.Range) (*ModuleContext, hcl.Diagnostics) {
-	cfg, diags := config.ParseDirOrFile(srcPath)
+func newModuleContext(parser *config.Parser, srcPath string, path addr.ModulePath, each EachState, inputConstants hcl.Attributes, root, parent *ModuleContext, callRange hcl.Range) (*ModuleContext, hcl.Diagnostics) {
+	cfg, diags := parser.ParseDirOrFile(srcPath)
 	mctx := &ModuleContext{
 		Path:   path,
 		Config: cfg,
@@ -57,7 +57,7 @@ func newModuleContext(srcPath string, path addr.ModulePath, each EachState, inpu
 		switch {
 		case forEachVal.IsNull():
 			children[name] = newModuleEach(addr.NoEach)
-			childCtx, childDiags := mctx.childModuleContext(path, mcfg, NoEachState)
+			childCtx, childDiags := mctx.childModuleContext(parser, path, mcfg, NoEachState)
 			diags = append(diags, childDiags...)
 			children[name].Modules[addr.NoEachIndex] = childCtx
 		case forEachType.IsSetType():
@@ -94,7 +94,7 @@ func newModuleContext(srcPath string, path addr.ModulePath, each EachState, inpu
 					Key:   key,
 					Value: val,
 				}
-				childCtx, childDiags := mctx.childModuleContext(path, mcfg, each)
+				childCtx, childDiags := mctx.childModuleContext(parser, path, mcfg, each)
 				diags = append(diags, childDiags...)
 				if childCtx == nil {
 					// The content of the config block was so broken that we
@@ -119,7 +119,7 @@ func newModuleContext(srcPath string, path addr.ModulePath, each EachState, inpu
 	return mctx, diags
 }
 
-func (mctx *ModuleContext) childModuleContext(path addr.ModulePath, cfg *config.ModuleCall, each EachState) (*ModuleContext, hcl.Diagnostics) {
+func (mctx *ModuleContext) childModuleContext(parser *config.Parser, path addr.ModulePath, cfg *config.ModuleCall, each EachState) (*ModuleContext, hcl.Diagnostics) {
 	// This method is called while mctx is still being constructed, so
 	// mctx.Config, mctx.Root, and mctx.Constantsare the only fields safe to
 	// access. mctx.EvalConstant uses only mctx.Constants and so it is also
@@ -170,7 +170,7 @@ func (mctx *ModuleContext) childModuleContext(path addr.ModulePath, cfg *config.
 	}
 	srcPath = filepath.Join(basePath, srcPath)
 
-	childCtx, childDiags := newModuleContext(srcPath, path, each, cfg.Constants, mctx.Root, mctx, cfg.DeclRange)
+	childCtx, childDiags := newModuleContext(parser, srcPath, path, each, cfg.Constants, mctx.Root, mctx, cfg.DeclRange)
 	diags = append(diags, childDiags...)
 	return childCtx, diags
 }

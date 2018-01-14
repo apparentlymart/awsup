@@ -23,8 +23,8 @@ type RootContext struct {
 // If the returned hcl.Diagnostics contains errors then the returned
 // context may not be complete, but is still returned to allow for cautious
 // use by analysis use-cases such as text editor integrations.
-func NewRootContext(rootPath string, constants hcl.Attributes) (*RootContext, hcl.Diagnostics) {
-	rootModule, diags := newModuleContext(rootPath, addr.RootModulePath, NoEachState, constants, nil, nil, hcl.Range{})
+func NewRootContext(parser *config.Parser, rootPath string, constants hcl.Attributes) (*RootContext, hcl.Diagnostics) {
+	rootModule, diags := newModuleContext(parser, rootPath, addr.RootModulePath, NoEachState, constants, nil, nil, hcl.Range{})
 	return &RootContext{
 		RootModule: rootModule,
 	}, diags

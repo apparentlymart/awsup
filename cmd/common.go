@@ -3,11 +3,14 @@ package cmd
 import (
 	"os"
 
+	"github.com/apparentlymart/awsup/config"
 	"github.com/hashicorp/hcl2/hcl"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
-func printDiagnostics(diags hcl.Diagnostics, fileASTs map[string]*hcl.File) {
+var parser = config.NewParser()
+
+func printDiagnostics(diags hcl.Diagnostics) {
 	if len(diags) == 0 {
 		return
 	}
@@ -20,6 +23,6 @@ func printDiagnostics(diags hcl.Diagnostics, fileASTs map[string]*hcl.File) {
 			width = newWidth
 		}
 	}
-	printer := hcl.NewDiagnosticTextWriter(os.Stderr, fileASTs, uint(width), isTTY)
+	printer := hcl.NewDiagnosticTextWriter(os.Stderr, parser.Files(), uint(width), isTTY)
 	printer.WriteDiagnostics(diags)
 }
