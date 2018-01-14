@@ -59,6 +59,11 @@ func (mctx *ModuleContext) EvalConstant(expr hcl.Expression, ty cty.Type, each E
 			"Key":   each.Key.Value(),
 			"Value": each.Value,
 		})
+	} else {
+		scope["Each"] = cty.UnknownVal(cty.Object(map[string]cty.Type{
+			"Key":   cty.DynamicPseudoType,
+			"Value": cty.DynamicPseudoType,
+		}))
 	}
 
 	ectx := &hcl.EvalContext{
