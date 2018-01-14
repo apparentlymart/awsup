@@ -1,8 +1,9 @@
 package cmd
 
 import (
-	"fmt"
+	"os"
 
+	"github.com/apparentlymart/awsup/config"
 	"github.com/spf13/cobra"
 )
 
@@ -13,7 +14,15 @@ var generateCmd = &cobra.Command{
 	Long:  `Generate CloudFormation template JSON from awsup configuration`,
 	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("'generate' is not yet implemented")
+		if len(args) == 0 {
+			args = []string{"."}
+		}
+
+		cfg, diags := config.ParseDirOrFile(args[0])
+		printDiagnostics(diags, cfg.FileASTs)
+		if diags.HasErrors() {
+			os.Exit(2)
+		}
 	},
 }
 
