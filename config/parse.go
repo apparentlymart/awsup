@@ -18,7 +18,7 @@ func ParseFileSource(src []byte, filename string) (*File, hcl.Diagnostics) {
 
 	file := &File{
 		Source:     src,
-		SourcePath: filename,
+		SourcePath: filepath.Clean(filename),
 		SourceAST:  astFile,
 	}
 	if astFile == nil {
@@ -28,7 +28,7 @@ func ParseFileSource(src []byte, filename string) (*File, hcl.Diagnostics) {
 	content, contentDiags := astFile.Body.Content(fileRootSchema)
 	diags = append(diags, contentDiags...)
 
-	file.Description = content.Attributes["description"]
+	file.Description = content.Attributes["Description"]
 
 	for _, block := range content.Blocks {
 		switch block.Type {
@@ -112,25 +112,36 @@ func ParseFileSource(src []byte, filename string) (*File, hcl.Diagnostics) {
 func ParseFile(filename string) (*File, hcl.Diagnostics) {
 	src, err := ioutil.ReadFile(filename)
 	if err != nil {
-		return nil, hcl.Diagnostics{
-			{
-				Severity: hcl.DiagError,
-				Summary:  "Failed to read configuration file",
-				Detail:   fmt.Sprintf("There was an error reading %s: %s", filename, err),
-			},
+		if os.IsNotExist(err) {
+			return nil, hcl.Diagnostics{
+				{
+					Severity: hcl.DiagError,
+					Summary:  "Failed to read configuration file",
+					Detail:   fmt.Sprintf("The requested file %s does not exist.", filename),
+				},
+			}
+		} else {
+			return nil, hcl.Diagnostics{
+				{
+					Severity: hcl.DiagError,
+					Summary:  "Failed to read configuration file",
+					Detail:   fmt.Sprintf("There was an error reading %s: %s", filename, err),
+				},
+			}
 		}
 	}
 	return ParseFileSource(src, filename)
 }
 
-func NewModule(path string, files ...*File) (*Module, hcl.Diagnostics) {
+func NewModule(sourcePath, sourceDir string, files ...*File) (*Module, hcl.Diagnostics) {
 	var diags hcl.Diagnostics
 
 	module := &Module{
-		SourcePath:    path,
+		SourcePath:    filepath.Clean(sourcePath),
+		SourceDir:     filepath.Clean(sourceDir),
 		Files:         make(map[string]*File),
 		FileASTs:      make(map[string]*hcl.File),
-		Description:   hcl.StaticExpr(cty.NullVal(cty.String), hcl.Range{}),
+		Description:   nil, // Assigned in loop, or defaulted after loop if needed
 		Conditions:    make(map[string]*hcl.Attribute),
 		Constants:     make(map[string]*Constant),
 		Locals:        make(map[string]*hcl.Attribute),
@@ -143,6 +154,8 @@ func NewModule(path string, files ...*File) (*Module, hcl.Diagnostics) {
 		UIParamGroups: make([]*UIParamGroup, 0),
 		UIParamLabels: make(map[string]*hcl.Attribute),
 	}
+
+	var descriptionRange hcl.Range
 
 	for _, file := range files {
 		if file == nil {
@@ -160,6 +173,23 @@ func NewModule(path string, files ...*File) (*Module, hcl.Diagnostics) {
 		module.Files[file.SourcePath] = file
 		module.FileASTs[file.SourcePath] = file.SourceAST
 
+		if file.Description != nil {
+			if module.Description != nil {
+				diags = append(diags, &hcl.Diagnostic{
+					Severity: hcl.DiagError,
+					Summary:  "Multiple descriptions",
+					Detail: fmt.Sprintf(
+						"Duplicate definition of module description, which was already defined at %s.",
+						descriptionRange,
+					),
+					Subject: &file.Description.NameRange,
+				})
+				continue
+			}
+			module.Description = file.Description.Expr
+			descriptionRange = file.Description.NameRange
+		}
+
 		for _, def := range file.Conditions {
 			if _, conflict := module.Conditions[def.Name]; conflict {
 				diags = append(diags, &hcl.Diagnostic{
@@ -171,6 +201,7 @@ func NewModule(path string, files ...*File) (*Module, hcl.Diagnostics) {
 					),
 					Subject: &def.NameRange,
 				})
+				continue
 			}
 			module.Conditions[def.Name] = def
 		}
@@ -186,6 +217,7 @@ func NewModule(path string, files ...*File) (*Module, hcl.Diagnostics) {
 					),
 					Subject: &def.DeclRange,
 				})
+				continue
 			}
 			module.Constants[def.Name] = def
 		}
@@ -201,6 +233,7 @@ func NewModule(path string, files ...*File) (*Module, hcl.Diagnostics) {
 					),
 					Subject: &def.NameRange,
 				})
+				continue
 			}
 			module.Locals[def.Name] = def
 		}
@@ -216,6 +249,7 @@ func NewModule(path string, files ...*File) (*Module, hcl.Diagnostics) {
 					),
 					Subject: &def.NameRange,
 				})
+				continue
 			}
 			module.Mappings[def.Name] = def
 		}
@@ -231,6 +265,7 @@ func NewModule(path string, files ...*File) (*Module, hcl.Diagnostics) {
 					),
 					Subject: &def.NameRange,
 				})
+				continue
 			}
 			module.Metadata[def.Name] = def
 		}
@@ -246,6 +281,7 @@ func NewModule(path string, files ...*File) (*Module, hcl.Diagnostics) {
 					),
 					Subject: &def.DeclRange,
 				})
+				continue
 			}
 			module.Modules[def.Name] = def
 		}
@@ -261,6 +297,7 @@ func NewModule(path string, files ...*File) (*Module, hcl.Diagnostics) {
 					),
 					Subject: &def.DeclRange,
 				})
+				continue
 			}
 			module.Outputs[def.Name] = def
 		}
@@ -276,6 +313,7 @@ func NewModule(path string, files ...*File) (*Module, hcl.Diagnostics) {
 					),
 					Subject: &def.DeclRange,
 				})
+				continue
 			}
 			module.Parameters[def.Name] = def
 		}
@@ -291,6 +329,7 @@ func NewModule(path string, files ...*File) (*Module, hcl.Diagnostics) {
 					),
 					Subject: &def.DeclRange,
 				})
+				continue
 			}
 			module.Resources[def.LogicalID] = def
 		}
@@ -310,10 +349,20 @@ func NewModule(path string, files ...*File) (*Module, hcl.Diagnostics) {
 					),
 					Subject: &def.NameRange,
 				})
+				continue
 			}
 			module.UIParamLabels[def.Name] = def
 		}
 
+	}
+
+	if module.Description == nil {
+		// Put a placeholder expression here so that callers don't need to
+		// deal with this ever being nil.
+		// We don't have any useful range to include here, but that's okay
+		// since we never actually show the range of the description as a whole
+		// anyway.
+		module.Description = hcl.StaticExpr(cty.NullVal(cty.String), hcl.Range{})
 	}
 
 	return module, diags
@@ -322,12 +371,25 @@ func NewModule(path string, files ...*File) (*Module, hcl.Diagnostics) {
 func ParseDir(path string) (*Module, hcl.Diagnostics) {
 	infos, err := ioutil.ReadDir(path)
 	if err != nil {
-		return nil, hcl.Diagnostics{
-			{
-				Severity: hcl.DiagError,
-				Summary:  "Failed to read configuration",
-				Detail:   fmt.Sprintf("There was an error reading %s: %s", path, err),
-			},
+		// We'll return an empty module just so the caller gets something
+		// somewhat-valid to chew on in spite of the error.
+		empty, _ := NewModule(path, path)
+		if os.IsNotExist(err) {
+			return empty, hcl.Diagnostics{
+				{
+					Severity: hcl.DiagError,
+					Summary:  "Failed to read configuration",
+					Detail:   fmt.Sprintf("The requested directory %s does not exist.", path),
+				},
+			}
+		} else {
+			return empty, hcl.Diagnostics{
+				{
+					Severity: hcl.DiagError,
+					Summary:  "Failed to read configuration",
+					Detail:   fmt.Sprintf("There was an error reading %s: %s.", path, err),
+				},
+			}
 		}
 	}
 
@@ -355,7 +417,7 @@ func ParseDir(path string) (*Module, hcl.Diagnostics) {
 		files = append(files, file)
 	}
 
-	module, modDiags := NewModule(path, files...)
+	module, modDiags := NewModule(path, path, files...)
 	diags = append(diags, modDiags...)
 	return module, diags
 }
@@ -364,7 +426,7 @@ func ParseDirOrFile(path string) (*Module, hcl.Diagnostics) {
 	info, err := os.Stat(path)
 	if err == nil && !info.IsDir() {
 		file, diags := ParseFile(path)
-		module, modDiags := NewModule(path, file)
+		module, modDiags := NewModule(file.SourcePath, filepath.Dir(file.SourcePath), file)
 		diags = append(diags, modDiags...)
 		return module, diags
 	}
@@ -389,10 +451,10 @@ func decodeConstant(block *hcl.Block) (*Constant, hcl.Diagnostics) {
 
 func decodeModuleCall(block *hcl.Block) (*ModuleCall, hcl.Diagnostics) {
 	var b struct {
-		Source     hcl.Expression  `hcl:"Source"`
-		Parameters *hcl.Attributes `hcl:"Parameters,block"`
-		Constants  *hcl.Attributes `hcl:"Constants,block"`
-		ForEach    hcl.Expression  `hcl:"ForEach"`
+		Source     hcl.Expression `hcl:"Source"`
+		Parameters *rawBody       `hcl:"Parameters,block"`
+		Constants  *rawBody       `hcl:"Constants,block"`
+		ForEach    hcl.Expression `hcl:"ForEach"`
 	}
 	diags := gohcl.DecodeBody(block.Body, nil, &b)
 
@@ -404,10 +466,14 @@ func decodeModuleCall(block *hcl.Block) (*ModuleCall, hcl.Diagnostics) {
 	}
 
 	if b.Parameters != nil {
-		module.Parameters = *b.Parameters
+		var jaDiags hcl.Diagnostics
+		module.Parameters, jaDiags = b.Parameters.JustAttributes()
+		diags = append(diags, jaDiags...)
 	}
 	if b.Constants != nil {
-		module.Constants = *b.Constants
+		var jaDiags hcl.Diagnostics
+		module.Constants, jaDiags = b.Constants.JustAttributes()
+		diags = append(diags, jaDiags...)
 	}
 
 	return module, diags
@@ -500,6 +566,19 @@ func decodeResource(block *hcl.Block) (*Resource, hcl.Diagnostics) {
 	}
 
 	return resource, diags
+}
+
+type rawBody struct {
+	hcl.Body `hcl:",remain"`
+}
+
+func (b *rawBody) JustAttributes() (hcl.Attributes, hcl.Diagnostics) {
+	if b == nil {
+		// for convenience in our decode functions
+		return make(hcl.Attributes), nil
+	}
+
+	return b.Body.JustAttributes()
 }
 
 var fileRootSchema = &hcl.BodySchema{

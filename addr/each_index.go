@@ -18,6 +18,7 @@ import (
 // is not set.
 type EachIndex interface {
 	EachType() EachType
+	Value() cty.Value
 	String() string
 }
 
@@ -56,6 +57,10 @@ func (i EachInt) EachType() EachType {
 	return EachTypeInt
 }
 
+func (i EachInt) Value() cty.Value {
+	return cty.NumberIntVal(int64(i))
+}
+
 func (i EachInt) String() string {
 	return strconv.Itoa(int(i))
 }
@@ -64,6 +69,10 @@ type EachString string
 
 func (s EachString) EachType() EachType {
 	return EachTypeString
+}
+
+func (s EachString) Value() cty.Value {
+	return cty.StringVal(string(s))
 }
 
 func (s EachString) String() string {

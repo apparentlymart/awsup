@@ -5,9 +5,16 @@ import (
 )
 
 type Module struct {
+	// SourcePath is the path to the directory or file from which this module
+	// was loaded.
 	SourcePath string
-	Files      map[string]*File
-	FileASTs   map[string]*hcl.File
+
+	// If this module was loaded from a file, SourceDir gives the path to
+	// the directory containing that file. Otherwise it matches SourcePath.
+	SourceDir string
+
+	Files    map[string]*File
+	FileASTs map[string]*hcl.File
 
 	Description   hcl.Expression
 	Conditions    map[string]*hcl.Attribute
