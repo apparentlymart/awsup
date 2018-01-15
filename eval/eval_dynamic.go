@@ -24,6 +24,16 @@ func (mctx *ModuleContext) EvalDynamic(expr hcl.Expression, each EachState) (Dyn
 			SrcRange: te.SrcRange,
 		}, diags
 
+	case *hclsyntax.ScopeTraversalExpr:
+		return mctx.evalVariableDynamic(te, each)
+
+	case *hclsyntax.RelativeTraversalExpr:
+		start, startDiags := mctx.EvalDynamic(te.Source, each)
+		diags = append(diags, startDiags...)
+		final, finalDiags := mctx.evalTraversalDynamic(start, te.Traversal, each)
+		diags = append(diags, finalDiags...)
+		return final, diags
+
 	case *hclsyntax.TemplateExpr:
 		parts := make([]DynExpr, len(te.Parts))
 		for i, partExpr := range te.Parts {
@@ -38,6 +48,21 @@ func (mctx *ModuleContext) EvalDynamic(expr hcl.Expression, each EachState) (Dyn
 			Delimiter: "",
 			Exprs:     parts,
 			SrcRange:  te.SrcRange,
+		}, diags
+
+	case *hclsyntax.IndexExpr:
+		// TODO: Verify that the collection is a list and error if not,
+		// since CloudFormation only supports indexing of lists.
+		index, indexDiags := mctx.EvalDynamic(te.Key, each)
+		diags = append(diags, indexDiags...)
+		coll, collDiags := mctx.EvalDynamic(te.Collection, each)
+		diags = append(diags, collDiags...)
+
+		return &DynIndex{
+			List:  coll,
+			Index: index,
+
+			SrcRange: te.SrcRange,
 		}, diags
 
 	case *hclsyntax.BinaryOpExpr:
@@ -136,4 +161,148 @@ func (mctx *ModuleContext) EvalDynamic(expr hcl.Expression, each EachState) (Dyn
 		SrcRange: expr.Range(),
 	}, diags
 
+}
+
+func (mctx *ModuleContext) evalVariableDynamic(expr *hclsyntax.ScopeTraversalExpr, each EachState) (DynExpr, hcl.Diagnostics) {
+	traversal := expr.Traversal
+	var diags hcl.Diagnostics
+	switch traversal.RootName() {
+
+	case "Const", "Each":
+		val, valDiags := mctx.EvalConstant(expr, cty.DynamicPseudoType, each)
+		diags = append(diags, valDiags...)
+		return &DynLiteral{
+			Value:    val,
+			SrcRange: expr.SrcRange,
+		}, diags
+
+	case "Local":
+		var nameStepI hcl.Traverser
+		if len(traversal) >= 2 {
+			nameStepI = traversal[1]
+		}
+		nameStep, ok := nameStepI.(hcl.TraverseAttr)
+		if !ok {
+			if len(traversal) < 2 {
+				diags = append(diags, &hcl.Diagnostic{
+					Severity: hcl.DiagError,
+					Summary:  "Illegal use of Local object",
+					Detail:   "The Local object requires an attribute to select a specific named local value.",
+					Subject:  traversal.SourceRange().Ptr(),
+				})
+				return &DynLiteral{
+					Value:    cty.DynamicVal,
+					SrcRange: traversal.SourceRange(),
+				}, diags
+			}
+		}
+
+		name := nameStep.Name
+		local, exists := mctx.Config.Locals[name]
+		if !exists {
+			diags = append(diags, &hcl.Diagnostic{
+				Severity: hcl.DiagError,
+				Summary:  "Unknown local value",
+				Detail:   fmt.Sprintf("There is no local value named %q.", name),
+				Subject:  &nameStep.SrcRange,
+			})
+			return &DynLiteral{
+				Value:    cty.DynamicVal,
+				SrcRange: nameStep.SrcRange,
+			}, diags
+		}
+
+		subExpr := local.Expr
+		vars := mctx.DetectVariables(subExpr)
+		if len(vars) == 0 {
+			// If the local value is constant-only then we'll evaluate it here
+			// and return its literal value.
+			val, valDiags := mctx.EvalConstant(subExpr, cty.DynamicPseudoType, each)
+			diags = append(diags, valDiags...)
+			return &DynLiteral{
+				Value:    val,
+				SrcRange: expr.SrcRange,
+			}, diags
+		}
+
+		// If the value contains dynamic-only constructs then we'll fall out
+		// here and try to incorporate its expression int ours.
+		dynExpr, dynDiags := mctx.EvalDynamic(subExpr, each)
+		diags = append(diags, dynDiags...)
+		return dynExpr, diags
+
+	default:
+		diags = append(diags, &hcl.Diagnostic{
+			Severity: hcl.DiagError,
+			Summary:  "Unknown object",
+			Detail:   fmt.Sprintf("There is no object named %q.", traversal.RootName()),
+			Subject:  traversal[0].SourceRange().Ptr(),
+		})
+		return &DynLiteral{
+			Value:    cty.DynamicVal,
+			SrcRange: traversal[0].SourceRange(),
+		}, diags
+	}
+}
+
+func (mctx *ModuleContext) evalTraversalDynamic(start DynExpr, traversal hcl.Traversal, each EachState) (DynExpr, hcl.Diagnostics) {
+	var diags hcl.Diagnostics
+	expr := start
+Steps:
+	for _, rawStep := range traversal {
+		switch step := rawStep.(type) {
+		case hcl.TraverseRoot:
+			panic("can't use absolute traversal with evalTraversalDynamic")
+		case hcl.TraverseIndex:
+			expr = &DynIndex{
+				List: expr,
+				Index: &DynLiteral{
+					Value:    step.Key,
+					SrcRange: step.SrcRange,
+				},
+			}
+		case hcl.TraverseAttr:
+			// For variables that _do_ have attributes we'll handle them
+			// in evalVariableDynamic before we pass off the remaining
+			// traversal to this function, so this is always an error here.
+			diags = append(diags, &hcl.Diagnostic{
+				Severity: hcl.DiagError,
+				Summary:  "Unsupported attribute",
+				Detail:   "This value does not have any attributes.",
+				Subject:  &step.SrcRange,
+			})
+			expr = &DynLiteral{
+				Value:    cty.DynamicVal,
+				SrcRange: step.SrcRange,
+			}
+			break Steps
+		case hcl.TraverseSplat:
+			diags = append(diags, &hcl.Diagnostic{
+				Severity: hcl.DiagError,
+				Summary:  "Splat expression not supported",
+				Detail:   "This value does not support splat expressions.",
+				Subject:  &step.SrcRange,
+			})
+			expr = &DynLiteral{
+				Value:    cty.DynamicVal,
+				SrcRange: step.SrcRange,
+			}
+			break Steps
+		default:
+			// Shouldn't happen but we'll produce a generic message just in
+			// case HCL adds new traversal steps in future without us noticing.
+			diags = append(diags, &hcl.Diagnostic{
+				Severity: hcl.DiagError,
+				Summary:  "Unsupported operation",
+				Detail:   "This value does not support this operation.",
+				Subject:  rawStep.SourceRange().Ptr(),
+			})
+			expr = &DynLiteral{
+				Value:    cty.DynamicVal,
+				SrcRange: rawStep.SourceRange(),
+			}
+			break Steps
+		}
+	}
+	return expr, diags
 }
