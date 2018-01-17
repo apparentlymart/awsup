@@ -103,17 +103,7 @@ func (mctx *ModuleContext) EvalConstant(expr hcl.Expression, ty cty.Type, each E
 
 	scope["Const"] = cty.ObjectVal(mctx.Constants)
 	scope["Local"] = cty.ObjectVal(locals)
-	if each != NoEachState {
-		scope["Each"] = cty.ObjectVal(map[string]cty.Value{
-			"Key":   each.Key.Value(),
-			"Value": each.Value,
-		})
-	} else {
-		scope["Each"] = cty.UnknownVal(cty.Object(map[string]cty.Type{
-			"Key":   cty.DynamicPseudoType,
-			"Value": cty.DynamicPseudoType,
-		}))
-	}
+	scope["Each"] = eachObject(each)
 
 	ectx := &hcl.EvalContext{
 		Variables: scope,
@@ -211,4 +201,18 @@ func DetectVariables(expr hcl.Expression) []hcl.Traversal {
 		}
 	}
 	return ret
+}
+
+func eachObject(each EachState) cty.Value {
+	if each != NoEachState {
+		return cty.ObjectVal(map[string]cty.Value{
+			"Key":   each.Key.Value(),
+			"Value": each.Value,
+		})
+	} else {
+		return cty.UnknownVal(cty.Object(map[string]cty.Type{
+			"Key":   cty.DynamicPseudoType,
+			"Value": cty.DynamicPseudoType,
+		}))
+	}
 }
