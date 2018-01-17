@@ -11,9 +11,10 @@ import (
 	"github.com/zclconf/go-cty/cty"
 )
 
-func newModuleContext(parser *config.Parser, srcPath string, path addr.ModulePath, each EachState, inputConstants hcl.Attributes, root, parent *ModuleContext, callRange hcl.Range) (*ModuleContext, hcl.Diagnostics) {
+func newModuleContext(rctx *RootContext, parser *config.Parser, srcPath string, path addr.ModulePath, each EachState, inputConstants hcl.Attributes, root, parent *ModuleContext, callRange hcl.Range) (*ModuleContext, hcl.Diagnostics) {
 	cfg, diags := parser.ParseDirOrFile(srcPath)
 	mctx := &ModuleContext{
+		Global: rctx,
 		Path:   path,
 		Config: cfg,
 	}
@@ -188,7 +189,7 @@ func (mctx *ModuleContext) childModuleContext(parser *config.Parser, path addr.M
 	}
 	srcPath = filepath.Join(basePath, srcPath)
 
-	childCtx, childDiags := newModuleContext(parser, srcPath, path, each, cfg.Constants, mctx.Root, mctx, cfg.DeclRange)
+	childCtx, childDiags := newModuleContext(mctx.Global, parser, srcPath, path, each, cfg.Constants, mctx.Root, mctx, cfg.DeclRange)
 	diags = append(diags, childDiags...)
 	return childCtx, diags
 }

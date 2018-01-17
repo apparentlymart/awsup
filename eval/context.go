@@ -5,6 +5,7 @@ import (
 
 	"github.com/apparentlymart/awsup/addr"
 	"github.com/apparentlymart/awsup/config"
+	"github.com/apparentlymart/awsup/schema"
 	"github.com/hashicorp/hcl2/hcl"
 	"github.com/zclconf/go-cty/cty"
 )
@@ -12,6 +13,11 @@ import (
 type RootContext struct {
 	// RootModule is a reference to the ModuleContext for the root module.
 	RootModule *ModuleContext
+
+	// Schema is a representation of the resource type schema provided by
+	// AWS to describe the available resource types and their properties and
+	// attributes.
+	Schema *schema.Schema
 }
 
 // NewRootContext creates a RootContext by loading a module configuration
@@ -23,11 +29,13 @@ type RootContext struct {
 // If the returned hcl.Diagnostics contains errors then the returned
 // context may not be complete, but is still returned to allow for cautious
 // use by analysis use-cases such as text editor integrations.
-func NewRootContext(parser *config.Parser, rootPath string, constants hcl.Attributes) (*RootContext, hcl.Diagnostics) {
-	rootModule, diags := newModuleContext(parser, rootPath, addr.RootModulePath, NoEachState, constants, nil, nil, hcl.Range{})
-	return &RootContext{
-		RootModule: rootModule,
-	}, diags
+func NewRootContext(parser *config.Parser, rootPath string, constants hcl.Attributes, sch *schema.Schema) (*RootContext, hcl.Diagnostics) {
+	rctx := &RootContext{
+		Schema: sch,
+	}
+	rootModule, diags := newModuleContext(rctx, parser, rootPath, addr.RootModulePath, NoEachState, constants, nil, nil, hcl.Range{})
+	rctx.RootModule = rootModule
+	return rctx, diags
 }
 
 func (ctx *RootContext) VisitModules(cb ModuleVisitor) {
@@ -35,6 +43,9 @@ func (ctx *RootContext) VisitModules(cb ModuleVisitor) {
 }
 
 type ModuleContext struct {
+	// Global is a reference to the RootContext that this context belongs to.
+	Global *RootContext
+
 	// Path is the absolute path of the module instance that this context
 	// belongs to. This can be used as part of identifiers that need to be
 	// globally-unique in the resulting flattened CloudFormation JSON.

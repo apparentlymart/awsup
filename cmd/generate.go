@@ -24,11 +24,13 @@ var generateCmd = &cobra.Command{
 
 		var diags hcl.Diagnostics
 
+		sch := schema.Builtin()
+
 		inputConstants, constantsDiags := parser.ParseValuesFiles(generateCmdConstantsFiles...)
 		diags = append(diags, constantsDiags...)
 		exitIfErrors(diags)
 
-		ctx, ctxDiags := eval.NewRootContext(parser, args[0], inputConstants)
+		ctx, ctxDiags := eval.NewRootContext(parser, args[0], inputConstants, sch)
 		diags = append(diags, ctxDiags...)
 		exitIfErrors(diags)
 
