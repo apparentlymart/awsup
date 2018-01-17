@@ -8,8 +8,8 @@ type FlatTemplate struct {
 	Description string
 	Metadata    map[string]cty.Value
 	Parameters  map[string]*FlatParameter
-	Mappings    map[string]map[string]*cty.Value
-	Conditions  map[string]*DynExpr
+	Mappings    map[string]map[string]cty.Value
+	Conditions  map[string]DynExpr
 	Resources   map[string]*FlatResource
 	Outputs     map[string]*FlatOutput
 }
@@ -24,7 +24,7 @@ type FlatParameter struct {
 	MaxLength      cty.Value
 	MinValue       cty.Value
 	MaxValue       cty.Value
-	NoEcho         bool
+	NoEcho         cty.Value
 }
 
 type FlatResource struct {
