@@ -1,12 +1,14 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 
+	"github.com/apparentlymart/awsup/cfnjson"
 	"github.com/apparentlymart/awsup/eval"
+	"github.com/apparentlymart/awsup/schema"
 	"github.com/hashicorp/hcl2/hcl"
 	"github.com/spf13/cobra"
-	"github.com/zclconf/go-cty/cty"
 )
 
 var generateCmdConstantsFiles []string
@@ -34,13 +36,16 @@ var generateCmd = &cobra.Command{
 		diags = append(diags, ctxDiags...)
 		exitIfErrors(diags)
 
-		// The following is just a placeholder for real context processing,
-		// to demonstrate that the config loading is working.
-		ctx.VisitModules(func(mctx *eval.ModuleContext) bool {
-			descVal, _ := mctx.EvalConstant(mctx.Config.Description, cty.String, eval.NoEachState)
-			fmt.Printf("- %s: %#v\n", mctx.Path, descVal)
-			return true
-		})
+		template, templateDiags := ctx.Build()
+		diags = append(diags, templateDiags...)
+		exitIfErrors(diags)
+
+		rawTemplate, prepDiags := cfnjson.PrepareStructure(template)
+		diags = append(diags, prepDiags...)
+		exitIfErrors(diags)
+
+		jsonSrc, _ := json.MarshalIndent(rawTemplate, "", "  ")
+		fmt.Printf("%s\n", jsonSrc)
 
 		// If we didn't error out above then we might still have some warnings
 		// to print here.
