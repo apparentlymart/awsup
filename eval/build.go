@@ -103,6 +103,25 @@ func (ctx *RootContext) Build() (*FlatTemplate, hcl.Diagnostics) {
 		ret.Parameters[name] = flat
 	}
 
+	for name, output := range root.Config.Outputs {
+		if !addr.ValidName(name) {
+			diags = append(diags, &hcl.Diagnostic{
+				Severity: hcl.DiagError,
+				Summary:  "Invalid output name",
+				Detail:   "Output names may contain only alphanumeric characters.",
+				Subject:  &output.DeclRange,
+			})
+		}
+
+		flat := &FlatOutput{}
+		flat.Value = evalDynamicWithDiags(root, output.Value, NoEachState, &diags)
+		if output.Export != nil {
+			flat.ExportName = evalDynamicWithDiags(root, output.Export.Name, NoEachState, &diags)
+		}
+
+		ret.Outputs[name] = flat
+	}
+
 	return ret, diags
 }
 
@@ -110,4 +129,10 @@ func evalConstantWithDiags(mctx *ModuleContext, expr hcl.Expression, ty cty.Type
 	val, newDiags := mctx.EvalConstant(expr, ty, each)
 	*diags = append(*diags, newDiags...)
 	return val
+}
+
+func evalDynamicWithDiags(mctx *ModuleContext, expr hcl.Expression, each EachState, diags *hcl.Diagnostics) DynExpr {
+	dynExpr, newDiags := mctx.EvalDynamic(expr, each)
+	*diags = append(*diags, newDiags...)
+	return dynExpr
 }
