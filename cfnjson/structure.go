@@ -72,3 +72,95 @@ func prepareParameters(params map[string]*eval.FlatParameter) (map[string]interf
 
 	return ret, diags
 }
+
+func prepareDynExpr(expr eval.DynExpr) (interface{}, hcl.Diagnostics) {
+	switch te := expr.(type) {
+
+	case *eval.DynLiteral:
+		return ctyjson.SimpleJSONValue{te.Value}, nil
+
+	case *eval.DynJoin:
+		var diags hcl.Diagnostics
+		args := make([]interface{}, 0, len(te.Exprs)+1)
+		args = append(args, te.Delimiter)
+		for _, se := range te.Exprs {
+			subExpr, subDiags := prepareDynExpr(se)
+			diags = append(diags, subDiags...)
+			args = append(args, subExpr)
+		}
+		return prepareFuncCall("Fn::Join", args...), diags
+
+	case *eval.DynIf:
+		var diags hcl.Diagnostics
+		ifRaw, subDiags := prepareDynExpr(te.If)
+		diags = append(diags, subDiags...)
+		elseRaw, subDiags := prepareDynExpr(te.Else)
+		diags = append(diags, subDiags...)
+		return prepareFuncCall("Fn::If", ifRaw, elseRaw), diags
+
+	case *eval.DynEquals:
+		var diags hcl.Diagnostics
+		aRaw, subDiags := prepareDynExpr(te.A)
+		diags = append(diags, subDiags...)
+		bRaw, subDiags := prepareDynExpr(te.B)
+		diags = append(diags, subDiags...)
+		return prepareFuncCall("Fn::Equals", aRaw, bRaw), diags
+
+	case *eval.DynLogical:
+		panic(fmt.Errorf("DynLogical rendering not yet implemented"))
+
+	case *eval.DynNot:
+		panic(fmt.Errorf("DynNot rendering not yet implemented"))
+
+	case *eval.DynSplit:
+		strRaw, diags := prepareDynExpr(te.String)
+		return prepareFuncCall("Fn::Split", te.Delimiter, strRaw), diags
+
+	case *eval.DynIndex:
+		var diags hcl.Diagnostics
+		listRaw, subDiags := prepareDynExpr(te.List)
+		diags = append(diags, subDiags...)
+		indexRaw, subDiags := prepareDynExpr(te.Index)
+		diags = append(diags, subDiags...)
+		return prepareFuncCall("Fn::Select", indexRaw, listRaw), diags
+
+	case *eval.DynRef:
+		return prepareFuncCall("Ref", te.LogicalID), nil
+
+	case *eval.DynGetAttr:
+		var diags hcl.Diagnostics
+		args := make([]interface{}, 0, len(te.Attrs)+1)
+		args = append(args, te.LogicalID)
+		for _, se := range te.Attrs {
+			subExpr, subDiags := prepareDynExpr(se)
+			diags = append(diags, subDiags...)
+			args = append(args, subExpr)
+		}
+		return prepareFuncCall("Fn::GetAtt", args...), diags
+
+	case *eval.DynMappingLookup:
+		var diags hcl.Diagnostics
+		firstRaw, subDiags := prepareDynExpr(te.FirstKey)
+		diags = append(diags, subDiags...)
+		secondRaw, subDiags := prepareDynExpr(te.SecondKey)
+		diags = append(diags, subDiags...)
+		return prepareFuncCall("Fn::FindInMap", te.MappingName, firstRaw, secondRaw), diags
+
+	case *eval.DynBase64:
+		strRaw, diags := prepareDynExpr(te.String)
+		return prepareFuncCall("Fn::Base64", strRaw), diags
+
+	case *eval.DynAccountAZs:
+		regionRaw, diags := prepareDynExpr(te.RegionName)
+		return prepareFuncCall("Fn::GetAZs", regionRaw), diags
+
+	default:
+		// Should never happen, since the above should be comprehensive
+		panic(fmt.Errorf("unsupported dynamic expression type %T", expr))
+
+	}
+}
+
+func prepareFuncCall(name string, args ...interface{}) interface{} {
+	return map[string]interface{}{name: args}
+}
