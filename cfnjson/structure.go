@@ -1,6 +1,8 @@
 package cfnjson
 
 import (
+	"fmt"
+
 	"github.com/apparentlymart/awsup/eval"
 	"github.com/hashicorp/hcl2/hcl"
 	ctyjson "github.com/zclconf/go-cty/cty/json"
@@ -18,6 +20,12 @@ func PrepareStructure(template *eval.FlatTemplate) (map[string]interface{}, hcl.
 		var paramDiags hcl.Diagnostics
 		ret["Parameters"], paramDiags = prepareParameters(template.Parameters)
 		diags = append(diags, paramDiags...)
+	}
+
+	if len(template.Outputs) != 0 {
+		var outputDiags hcl.Diagnostics
+		ret["Outputs"], outputDiags = prepareOutputs(template.Outputs)
+		diags = append(diags, outputDiags...)
 	}
 
 	return ret, diags
@@ -65,6 +73,31 @@ func prepareParameters(params map[string]*eval.FlatParameter) (map[string]interf
 
 		if !param.NoEcho.IsNull() {
 			raw["NoEcho"] = ctyjson.SimpleJSONValue{param.NoEcho}
+		}
+
+		ret[name] = raw
+	}
+
+	return ret, diags
+}
+
+func prepareOutputs(outputs map[string]*eval.FlatOutput) (map[string]interface{}, hcl.Diagnostics) {
+	var diags hcl.Diagnostics
+	ret := map[string]interface{}{}
+
+	for name, output := range outputs {
+		raw := map[string]interface{}{}
+
+		var valDiags hcl.Diagnostics
+		raw["Value"], valDiags = prepareDynExpr(output.Value)
+		diags = append(diags, valDiags...)
+
+		if output.ExportName != nil {
+			rawName, nameDiags := prepareDynExpr(output.ExportName)
+			diags = append(diags, nameDiags...)
+			raw["Export"] = map[string]interface{}{
+				"Name": rawName,
+			}
 		}
 
 		ret[name] = raw
