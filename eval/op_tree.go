@@ -42,6 +42,9 @@ type DynJoin struct {
 type DynIf struct {
 	ConditionName string
 	If, Else      DynExpr
+
+	SrcRange hcl.Range
+	isDynamicExpr
 }
 
 // DynEquals is a boolean expression (to be used in named conditionals only)
