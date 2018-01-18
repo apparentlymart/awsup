@@ -77,15 +77,6 @@ const (
 	DynLogicalOr     DynLogicalOp = '|'
 )
 
-// DynOr is a boolean expression (to be used in named conditionals only) that
-// performs the logical OR operation on a number of other boolean expressions.
-type DynOr struct {
-	Values []DynExpr
-
-	SrcRange hcl.Range
-	isDynamicExpr
-}
-
 // DynNot is a boolean expression (to be used in named conditionals only) that
 // returns the boolean inverse of another boolean expression.
 type DynNot struct {
